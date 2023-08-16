@@ -1,0 +1,33 @@
+{
+    "deployment_action": "",
+    "stack_set_name": "",
+    "stack_set_desciption": "",
+    "deployment_targets": {
+                            "dev": {
+                                        "org_units": [], 
+                                        "regions": [],
+                                        "filter_accounts": [],
+                                        "filter_type": ""
+                                    },
+                            "test": {
+                                        "org_units": [], 
+                                        "regions": [],
+                                        "filter_accounts": [],
+                                        "filter_type": ""
+                                    },                            
+                            "prod": {
+                                        "org_units": [], 
+                                        "regions": [],
+                                        "filter_accounts": [],
+                                        "filter_type": ""
+                                    }                                   
+                          },
+    "cft_capabilities": ["CAPABILITY_IAM", "CAPABILITY_NAMED_IAM"],
+    "auto_deployement": "True",
+    "retain_stacks_on_account_removal": "False",
+    "region_deployment_concurrency": "PARALLEL",
+    "max_concurrent_percentage": 20,
+    "failure_tolerance_percentage": 19
+}
+
+ 

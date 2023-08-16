@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description:  CI/CD pipeline
+Metadata:
+  Version: 1.0.0
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application
+        Parameters:
+          - ApplicationName
+          - CICDBucket
+          - CICDBucketPrefix
+      - Label:
+          default: CodeCommit Repository
+        Parameters:
+          - AppRepositoryName
+          - AppRepositoryBranchName
+      - Label:
+          default: Roles
+        Parameters:
+          - CodePipelineRoleARN
+          - CodeBuildProjectRoleARN
+          - CloudWatchEventRoleARN
+
+    ParameterLabels:
+      ApplicationName:
+        default: Application Name
+      CICDBucket:
+        default: CI/CD Bucket
+      CICDBucketPrefix:
+        default: Bucket prefix
+      AppRepositoryName:
+        default: Name
+      AppRepositoryBranchName:
+        default: Branch
+      CodePipelineRoleARN:
+        default: Code Pipeline
+      CodeBuildProjectRoleARN:
+        default: Code Build
+      CloudWatchEventRoleARN:
+        default: CloudWatch Event
+
+Parameters:
+  ApplicationName:
+    Description: Please specify the application name prefix for all the resources
+    Type: String
+    Default: ""
+
+  CICDBucket:
+    Type: String
+    Description: CICD Bucket name. 
+    Default: ""
+
+  CICDBucketPrefix:
+    Type: String
+    Description: Bucket prefix to upload artifacts
+    Default: ""
+
+  CodeBuildProjectRoleARN:
+    Description: Code Build project role ARN
+    Type: String
+    Default: ""
+
+  CodePipelineRoleARN:
+    Description: Code Pipeline role ARN
+    Type: String
+    Default: ""
+
+  CloudWatchEventRoleARN:
+    Description: CloudWatch event role ARN
+    Type: String
+    Default: ""
+
+  AppRepositoryName:
+    Description: CodeCommit repo name
+    Type: String
+    Default: ""
+
+  AppRepositoryBranchName:
+    Description: CodeCommit repo branch
+    Type: String
+    Default: "main"
+
+Resources:
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: CICD_BUCKET
+            Value:
+              Ref: CICDBucket
+          - Name: CICD_BUCKET_PREFIX
+            Value:
+              Ref: CICDBucketPrefix
+        Image: aws/codebuild/standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref CodeBuildProjectRoleARN
+      Source:
+        Type: CODEPIPELINE
+      EncryptionKey: alias/aws/s3
+      TimeoutInMinutes: 240
+      Name: !Sub "${ApplicationName}-codebuild-project"
+
+  CICDPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !Ref CodePipelineRoleARN
+      Name: !Sub "${ApplicationName}-cicd-pipeline"
+      Stages:
+        - Actions:
+            - ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"
+              Configuration:
+                RepositoryName: !Ref AppRepositoryName
+                BranchName: !Ref AppRepositoryBranchName
+                PollForSourceChanges: false
+              Name: Source-Action
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+          Name: Source
+        - Actions:
+            - ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              Name: Build-Action
+              OutputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+          Name: Deployment
+      ArtifactStore:
+        Location:
+          Ref: CICDBucket
+        Type: S3
+
+  CICDPipelineEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${ApplicationName}-cicdpipeline-trigger-rule"
+      EventPattern:
+        source:
+          - aws.codecommit
+        resources:
+          - Fn::Join:
+              - ""
+              - - "arn:"
+                - Ref: AWS::Partition
+                - ":codecommit:"
+                - Ref: AWS::Region
+                - ":"
+                - Ref: AWS::AccountId
+                - ":"
+                - Ref: AppRepositoryName
+        detail-type:
+          - CodeCommit Repository State Change
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref AppRepositoryBranchName
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::Join:
+              - ""
+              - - "arn:"
+                - Ref: AWS::Partition
+                - ":codepipeline:"
+                - Ref: AWS::Region
+                - ":"
+                - Ref: AWS::AccountId
+                - ":"
+                - Ref: CICDPipeline
+          Id: !Sub "${ApplicationName}-cicdPipeline"
+          RoleArn: !Ref CloudWatchEventRoleARN
+
+Outputs:
+  CICDPipelineName:
+    Value: !Ref CICDPipeline
+    Description: CICD Pipeline Name

@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: OU CI/CD pipeline (SNS Topics)
+
+Parameters:
+  ResourceNamePrefix:
+    Description: Please specify the prefix for all the resources
+    Type: String
+    Default: ""
+
+Resources:
+
+  OUCICDPipelinePRApprovalTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ResourceNamePrefix}-pull-request-approval-topic"
+      DisplayName: !Sub "${ResourceNamePrefix}-pull-request-approval"
+
+  OUCICDPipelineTESTApprovalTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ResourceNamePrefix}-test-approval-topic"
+      DisplayName: !Sub "${ResourceNamePrefix}-test-approval"
+
+  OUCICDPipelineProdApprovalTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ResourceNamePrefix}-prod-approval-topic"
+      DisplayName: !Sub "${ResourceNamePrefix}-prod-approval"
+
+
+Outputs:
+  PRApprovalTopicArn:
+    Description: Arn of Created Pull Request SNS Topic
+    Value: !Ref OUCICDPipelinePRApprovalTopic
+  TESTApprovalTopicArn:
+    Description: Arn of Created TEST SNS Topic
+    Value: !Ref OUCICDPipelineTESTApprovalTopic
+  ProdApprovalTopicArn:
+    Description: Arn of Created Prod SNS Topic
+    Value: !Ref OUCICDPipelineProdApprovalTopic
+

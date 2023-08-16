@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: OU CI/CD pipeline (Prereq Lambdas for SNS Subsription and Associating Approval Rule template)
+
+Parameters:
+  ResourceNamePrefix:
+    Description: Please specify the prefix for all the resources
+    Type: String
+    Default: ""
+
+Resources:
+  AssociateRuleTemplateLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ResourceNamePrefix}-rule-template-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: !Sub '${ResourceNamePrefix}-rule-template-lambda-policy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - codecommit:AssociateApprovalRuleTemplateWithRepository
+            Resource: arn:aws:codecommit:*:*:*
+
+  AssociateRuleTemplateLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourceNamePrefix}-rule-template-lambda'
+      Role: !GetAtt AssociateRuleTemplateLambdaExecutionRole.Arn
+      Handler: index.handler
+      Runtime: python3.8
+      Code:
+        ZipFile: !Sub |  
+          import boto3
+          import json
+          import cfnresponse
+          import logging
+
+
+          LOGGER = logging.getLogger()
+          LOGGER.setLevel(logging.INFO)
+
+          def handler(event, context):
+              """Associate code commit approval rule template to codecommit repo"""
+              responseData = { 'Value': [] }
+              client = boto3.client('codecommit')
+              try:
+                  LOGGER.info('Associate Code Commit Lambda!')
+                  # LOGGER.info(json.dumps(event))
+
+                  if event['RequestType'] == "Delete":
+                      responseData['Value'].append('No action as the stack is being deleted!')
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  
+                  # responseData['Value'].append('Associate Code Commit Rule: ' + json.dumps(event['ResourceProperties']))
+
+                  response = client.associate_approval_rule_template_with_repository(
+                          approvalRuleTemplateName=event['ResourceProperties']['ApprovalRuleTemplateName'],
+                          repositoryName=event['ResourceProperties']['CodeRepositoryName']
+                  )
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+              except Exception as e:
+                  LOGGER.error(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData) 
+
+  SNSSubscriptionLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ResourceNamePrefix}-subscription-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: !Sub '${ResourceNamePrefix}-subscription-lambda-policy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - sns:Subscribe
+            Resource: arn:aws:sns:*:*:*
+
+  SNSSubscriptionLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourceNamePrefix}-subscription-lambda'
+      Role: !GetAtt SNSSubscriptionLambdaExecutionRole.Arn
+      Handler: index.handler
+      Runtime: python3.8
+      Code:
+        ZipFile: !Sub |  
+          import boto3
+          import json
+          import cfnresponse
+          import logging
+
+
+          LOGGER = logging.getLogger()
+          LOGGER.setLevel(logging.INFO)
+
+          def handler(event, context):
+              """Create Email Subscriptions for SNS Topic"""
+              responseData = { 'Value': [] }
+              client = boto3.client('sns')
+              try:
+                  LOGGER.info('Create Email Subscriptions Lambda!')
+                  # LOGGER.info(json.dumps(event))
+
+                  if event['RequestType'] == "Delete":
+                      responseData['Value'].append('No action as the stack is being deleted!')
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  
+                  # responseData['Value'].append('Create Email Subscription for ' + json.dumps(event['ResourceProperties']))
+
+                  properties = event['ResourceProperties']
+
+                  emailList = properties['EmailList'].split(",")
+
+                  for email in emailList:
+                      subscription = client.subscribe(
+                          TopicArn=properties['SNSTopicArn'],
+                          Protocol='email',
+                          Endpoint=email.strip(),
+                          ReturnSubscriptionArn=True)['SubscriptionArn']
+                      responseData['Value'].append(subscription)
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+              except Exception as e:
+                  LOGGER.error(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData) 
+
+Outputs:
+
+  AssociateRuleTemplateLambdaFunctionArn:
+    Value: !GetAtt AssociateRuleTemplateLambdaFunction.Arn
+    Description: Approval Rule Template Lambda ARN
+
+  SNSSubscriptionLambdaFunctionArn:
+    Value: !GetAtt SNSSubscriptionLambdaFunction.Arn
+    Description: SNS Subscription Lambda ARN

@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: OU CI/CD pipeline (SNS Subscriptions)
+
+Parameters:
+  # ResourcePrefix:
+  #   Description: Please specify the application name prefix for all the resources
+  #   Type: String
+  #   Default: ""
+
+  SNSTopicArn:
+    Type: String
+    Description: SNS Topic for subscription
+    Default: ""
+
+  SubscriptionEmailList:
+    Type: String
+    Description: Email addresses (in comma separated format) to subscribe
+    Default: ""
+
+  TopicSubscriptionLambdaArn:
+    Type: String
+    Description: Lambda to create multiple email subscriptions to topic.
+    Default: ""
+
+Resources:
+  TopicSubscriptionLambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    Version: "1.0"
+    Properties:
+      ServiceToken: !Ref TopicSubscriptionLambdaArn
+      SNSTopicArn: !Ref SNSTopicArn
+      EmailList: !Ref SubscriptionEmailList

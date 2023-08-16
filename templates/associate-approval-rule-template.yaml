@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: OU CI/CD pipeline (Associate Approval Rule Template)
+
+Parameters:
+  # ResourceNamePrefix:
+  #   Description: Please specify the prefix for all the resources
+  #   Type: String
+  #   Default: ""
+
+  AppRepositoryName:
+    Description: Name of the CodeCommit Repository
+    Type: String
+    Default: ""
+
+  ApprovalRuleTemplateName:
+    Type: String
+    Description: CodeCommit Approval Rule Template name (optional)
+    Default: ""
+
+  ApprovalRuleTemplateLambdaArn:
+    Type: String
+    Description: Lambda to associate rule template to code commit repository. Called if ApprovalRuleTemplateName param specified
+    Default: ""
+
+Resources:
+
+  ApprovalRuleTemplateLambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    Version: "1.0"
+    Properties:
+      ServiceToken: !Ref ApprovalRuleTemplateLambdaArn
+      CodeRepositoryName: !Ref AppRepositoryName
+      ApprovalRuleTemplateName: !Ref ApprovalRuleTemplateName
+

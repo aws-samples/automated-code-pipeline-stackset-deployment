@@ -1,0 +1,25 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - pip3 install boto3
+      - gem install cfn-nag
+
+  pre_build:
+    commands:
+      # Do not change the values of below variables
+      - TEMPLATE_FILE_PATH=./templates
+      - DEPLOYMENT_SCRIPT_FILE=./deploy_scripts/deploy.py
+      - CICD_BUCKET=ou-cicd-pipeline-artifact
+      - CICD_BUCKET_PREFIX=ou-cicd-pipeline-app-prereqs
+  build:
+    commands:
+      # - echo "Running CFN Nag Scan on Templates"
+      # - cfn_nag_scan --input-path $TEMPLATE_FILE_PATH
+      - echo "Download deployer files from CICD Bucket and upzip..."
+      - aws s3 cp s3://$CICD_BUCKET/$CICD_BUCKET_PREFIX/ou_deployer.zip ou_deployer.zip
+      - unzip -D ou_deployer.zip
+
+      - echo "Triggering deployment.."
+      - python $DEPLOYMENT_SCRIPT_FILE --env $DEPLOY_ENV --region $AWS_REGION --s3_bucket $ARTIFACTS_BUCKET --app_name $REPOSITORY_NAME

@@ -1,0 +1,30 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+    
+  pre_build:
+    commands:
+
+  build:
+    commands:
+      - # Package app prereqs
+      - echo "Zipping app_prereqs....."
+      - cd prereqs/app_prereqs/
+      - zip -r -D app_prereqs.zip *
+      - echo "Upload app_prereqs to CICD Bucket....."
+      - aws s3 cp app_prereqs.zip s3://$CICD_BUCKET/$CICD_BUCKET_PREFIX/app_prereqs.zip
+      - echo "remove app_prereqs.zip....."
+      - rm app_prereqs.zip
+      - cd ../../
+
+      # Package deployer package
+      - echo "Zipping ou_deployer....."
+      - cd prereqs/deployer/
+      - zip -r ou_deployer.zip *
+      - echo "Upload ou_deployer to CICD Bucket....."
+      - aws s3 cp ou_deployer.zip s3://$CICD_BUCKET/$CICD_BUCKET_PREFIX/ou_deployer.zip
+      - echo "remove ou_deployer.zip....."
+      - rm ou_deployer.zip
+      - cd ../../

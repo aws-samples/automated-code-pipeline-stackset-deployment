@@ -1,0 +1,419 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: OU CI/CD pipeline
+
+Parameters:
+  ApplicationName:
+    Description: Please specify the application name prefix for all the resources
+    Type: String
+    Default: ""
+
+  TemplateBucket:
+    Type: String
+    Default: ""
+
+  DeploymentConfigBucket:
+    Description: Name of the Code bucket
+    Type: String
+    Default: ""
+
+  DeploymentConfigKey:
+    Description: Name of the zip file
+    Type: String
+    Default: ""
+
+  CodeBuildProjectRoleARN:
+    Description: Please specify the Code Build Project Role ARN
+    Type: String
+    Default: "" 
+  
+  CodePipelineRoleARN:
+    Description: Please specify the Code Pipeline Role ARN
+    Type: String
+    Default: "" 
+
+  CloudWatchEventRoleARN:
+    Description: CloudWatch Event Role ARN for Code Pipeline
+    Type: String
+    Default: ""
+
+  AppRepositoryName:
+    Description: Name of the CodeCommit Repository
+    Type: String
+    Default: ""
+
+  AppRepositoryDescription:
+    Description: Description of the CodeCommit Repository
+    Type: String
+    Default: ""
+
+
+  PRApprovalSNSARN:
+    Type: String
+    Description: Pull Request SNS Notification ARN
+    Default: ""
+
+  TESTApprovalSNSARN:
+    Type: String
+    Description: TEST SNS Notification ARN
+    Default: ""
+
+  ProdApprovalSNSARN:
+    Type: String
+    Description: Prod SNS Notification ARN
+    Default: ""
+
+Resources:
+
+  AppCodeRepository:
+    Type: AWS::CodeCommit::Repository
+    # Condition: HasCodeRepoAndKey
+    Properties:
+      RepositoryName: !Ref AppRepositoryName
+      RepositoryDescription: !Ref AppRepositoryDescription
+      Code:
+        BranchName: main
+        S3: 
+          Bucket: !Ref DeploymentConfigBucket
+          Key: !Ref DeploymentConfigKey
+
+  AppCodeRepositoryNotificationRule:
+    Type: 'AWS::CodeStarNotifications::NotificationRule'
+    DependsOn: AppCodeRepository
+    Properties:
+        Name: !Sub '${ApplicationName}-PR-notification-rule'
+        DetailType: FULL
+        Resource: !GetAtt AppCodeRepository.Arn
+        EventTypeIds: 
+            - codecommit-repository-pull-request-created
+            - codecommit-repository-pull-request-source-updated
+        Targets: 
+            - TargetType: SNS 
+              TargetAddress: !Ref PRApprovalSNSARN
+
+  OUCICDCodeDevBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: DEPLOY_ENV
+            Type: PLAINTEXT
+            Value: dev
+          - Name: AWS_REGION
+            Value:
+              Ref: AWS::Region
+          - Name: ARTIFACTS_BUCKET
+            Value:
+              Ref: TemplateBucket
+          - Name: REPOSITORY_NAME
+            Value:
+              Ref: AppRepositoryName
+        Image: aws/codebuild/standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref CodeBuildProjectRoleARN
+      Source:
+        Type: CODEPIPELINE
+      EncryptionKey: alias/aws/s3
+      TimeoutInMinutes: 240
+      Name: !Sub '${ApplicationName}-dev-deploy-codebuild-project'
+
+  OUCICDCodeTESTBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: DEPLOY_ENV
+            Type: PLAINTEXT
+            Value: test
+          - Name: AWS_REGION
+            Value:
+              Ref: AWS::Region
+          - Name: ARTIFACTS_BUCKET
+            Value:
+              Ref: TemplateBucket
+          - Name: REPOSITORY_NAME
+            Value:
+              Ref: AppRepositoryName
+        Image: aws/codebuild/standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref CodeBuildProjectRoleARN
+      Source:
+        Type: CODEPIPELINE
+      EncryptionKey: alias/aws/s3
+      TimeoutInMinutes: 240
+      Name: !Sub '${ApplicationName}-test-deploy-codebuild-project'
+
+  OUCICDCodeProdBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: DEPLOY_ENV
+            Type: PLAINTEXT
+            Value: prod
+          - Name: AWS_REGION
+            Value:
+              Ref: AWS::Region
+          - Name: ARTIFACTS_BUCKET
+            Value:
+              Ref: TemplateBucket
+          - Name: REPOSITORY_NAME
+            Value:
+              Ref: AppRepositoryName
+        Image: aws/codebuild/standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref CodeBuildProjectRoleARN
+      Source:
+        Type: CODEPIPELINE
+      EncryptionKey: alias/aws/s3
+      TimeoutInMinutes: 240
+      Name: !Sub '${ApplicationName}-prod-deploy-codebuild-project'
+
+  OUCICDTemplateScanner:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: DEPLOY_ENV
+            Type: PLAINTEXT
+            Value: prod
+          - Name: AWS_REGION
+            Value:
+              Ref: AWS::Region
+          - Name: ARTIFACTS_BUCKET
+            Value:
+              Ref: TemplateBucket
+          - Name: REPOSITORY_NAME
+            Value:
+              Ref: AppRepositoryName
+        Image: aws/codebuild/standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref CodeBuildProjectRoleARN
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                - ls
+                - gem install cfn-nag
+            pre_build:
+              commands:
+                - cfn_nag_scan --input-path templates/
+                - for tmplt in $(ls ./template); 
+                  do
+                      rel_url=$ARTIFACTS_BUCKET/templates/${ApplicationName}/$tmplt;
+                      aws s3 cp ./templates/$tmplt s3://$rel_url --acl bucket-owner-full-control;
+                      aws cloudformation validate-template --template-url https://s3.amazonaws.com/$rel_url;
+                  done
+      EncryptionKey: alias/aws/s3
+      Name: !Sub '${ApplicationName}-cfn-scanner-codebuild-project'
+
+  OUCICDPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !Ref CodePipelineRoleARN
+      Name: !Sub '${ApplicationName}-cicd-pipeline'
+      Stages:
+        - Actions:
+            - ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: "1"
+              Configuration:
+                RepositoryName: !Ref AppRepositoryName
+                BranchName: main
+                PollForSourceChanges: false
+              Name: Source-Action
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+          Name: Source
+        - Actions:
+            - ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref OUCICDTemplateScanner
+              InputArtifacts:
+                - Name: SourceArtifact
+              Name: Build-Action
+              OutputArtifacts:
+                - Name: ScannedArtifact
+              RunOrder: 1
+          Name: CFN-Scanner
+        - Actions:
+            - ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref OUCICDCodeDevBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              Name: Build-Action
+              OutputArtifacts:
+                - Name: DevBuildArtifact
+              RunOrder: 1
+          Name: Dev-Deployment
+        - Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: "1"
+              Configuration:
+                NotificationArn: 
+                  Ref: TESTApprovalSNSARN
+              Name: DP-Pipeline-Approval
+              RunOrder: 1
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: "1"
+              Configuration:
+                NotificationArn: 
+                  Ref: TESTApprovalSNSARN
+              Name: SecOps-Pipeline-Approval
+              RunOrder: 2
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: "1"
+              Configuration:
+                NotificationArn: 
+                  Ref: TESTApprovalSNSARN
+              Name: WPaaS-Admin-Approval
+              RunOrder: 3
+          Name: TEST-Approval
+        - Actions:
+            - ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref OUCICDCodeTESTBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              Name: Build-Action
+              OutputArtifacts:
+                - Name: TESTBuildArtifact
+              RunOrder: 1
+          Name: TEST-Deployment
+        - Actions:
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: "1"
+              Configuration:
+                NotificationArn: 
+                  Ref: ProdApprovalSNSARN
+              Name: SecOps-Pipeline-Approval
+              RunOrder: 1
+            - ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: "1"
+              Configuration:
+                NotificationArn: 
+                  Ref: ProdApprovalSNSARN
+              Name: WPaaS-Admin-Approval
+              RunOrder: 2        
+          Name: Prod-Approval
+        - Actions:
+            - ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref OUCICDCodeProdBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              Name: Build-Action
+              OutputArtifacts:
+                - Name: ProdBuildArtifact
+              RunOrder: 1
+          Name: Prod-Deployment
+      ArtifactStore:
+        Location:
+          Ref: TemplateBucket
+        Type: S3
+          
+  OUCICDPipelineEventRule: 
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ApplicationName}-cicdpipeline-trigger-rule'
+      EventPattern:
+        source:
+          - aws.codecommit
+        resources:
+          - Fn::Join:
+              - ""
+              - - "arn:"
+                - Ref: AWS::Partition
+                - ":codecommit:"
+                - Ref: AWS::Region
+                - ":"
+                - Ref: AWS::AccountId
+                - ":"
+                - Ref: AppRepositoryName
+        detail-type:
+          - CodeCommit Repository State Change
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - main
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::Join:
+              - ""
+              - - "arn:"
+                - Ref: AWS::Partition
+                - ":codepipeline:"
+                - Ref: AWS::Region
+                - ":"
+                - Ref: AWS::AccountId 
+                - ":"
+                - Ref: OUCICDPipeline 
+          Id: !Sub '${ApplicationName}-cicdPipeline'
+          RoleArn: !Ref CloudWatchEventRoleARN
+
+Outputs:
+  CICDPipelineName:
+    Value: !Ref OUCICDPipeline
+    Description: CICD Pipeline Name
